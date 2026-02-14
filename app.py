@@ -402,31 +402,55 @@ if 'llm_helper' not in st.session_state:
     st.session_state.llm_helper = None
 if 'file_name' not in st.session_state:
     st.session_state.file_name = None
+# Multi-sheet support
+if 'sheets' not in st.session_state:
+    st.session_state.sheets = {}
+if 'executors' not in st.session_state:
+    st.session_state.executors = {}
+if 'sheet_names' not in st.session_state:
+    st.session_state.sheet_names = []
+if 'active_sheet' not in st.session_state:
+    st.session_state.active_sheet = None
 
 # Sidebar - API Configuration (copied from BNC)
 with st.sidebar:
     st.markdown("### AI Configuration")
     
-    provider = "groq"  # Fixed to Groq for this version
-    
-    st.markdown("**Model**")
-    model = "openai/gpt-oss-20b"
-    st.caption("openai/gpt-oss-20B (Groq)")
-    
-    st.markdown("**API Key**")
-    groq_api_key = st.text_input(
-        "Enter Groq API Key",
-        type="password",
-        help="Get your API key from console.groq.com"
+    st.markdown("**AI Provider**")
+    provider = st.radio(
+        "Choose provider",
+        ["Groq", "OpenAI"],
+        horizontal=True,
+        label_visibility="collapsed"
     )
     
-    if groq_api_key:
+    st.markdown("**Model**")
+    if provider == "Groq":
+        model = "openai/gpt-oss-20b"
+        st.caption("openai/gpt-oss-20B (Groq)")
+    else:
+        model = "gpt-4o-mini"
+        st.caption("GPT-4o Mini (OpenAI)")
+    
+    st.markdown("**API Key**")
+    api_key = st.text_input(
+        f"Enter {provider} API Key",
+        type="password",
+        help=f"Get your API key from {'console.groq.com' if provider == 'Groq' else 'platform.openai.com'}"
+    )
+    
+    if api_key:
         try:
             if 'llm_helper' not in st.session_state or st.session_state.llm_helper is None:
-                st.session_state.llm_helper = LLMHelper(api_key=groq_api_key, model=model)
-                st.success("API Connected")
+                st.session_state.llm_helper = LLMHelper(
+                    api_key=api_key, 
+                    provider=provider.lower(), 
+                    model=model
+                )
+                st.success(f"{provider} API Connected")
         except Exception as e:
             st.error(f"Connection failed: {str(e)}")
+    
     
     st.markdown("---")
     
@@ -442,6 +466,11 @@ with st.sidebar:
             st.session_state.executor = None
             st.session_state.chat_history = []
             st.session_state.file_name = None
+            # Multi-sheet support
+            st.session_state.sheets = {}
+            st.session_state.executors = {}
+            st.session_state.sheet_names = []
+            st.session_state.active_sheet = None
             st.rerun()
 
 
@@ -463,14 +492,40 @@ if st.session_state.uploaded_df is None:
         try:
             # Read file
             if uploaded_file.name.endswith('.csv'):
+                # CSV: single sheet
                 df = pd.read_csv(uploaded_file)
+                st.session_state.sheets = {"Sheet1": df}
+                st.session_state.executors = {"Sheet1": Executor(df)}
+                st.session_state.sheet_names = ["Sheet1"]
+                st.session_state.active_sheet = "Sheet1"
             else:
-                df = pd.read_excel(uploaded_file)
+                # Excel: potentially multiple sheets
+                excel_file = pd.ExcelFile(uploaded_file)
+                sheets = {}
+                executors = {}
+                
+                for sheet_name in excel_file.sheet_names:
+                    df = pd.read_excel(excel_file, sheet_name=sheet_name)
+                    sheets[sheet_name] = df
+                    executors[sheet_name] = Executor(df)
+                
+                st.session_state.sheets = sheets
+                st.session_state.executors = executors
+                st.session_state.sheet_names = excel_file.sheet_names
+                st.session_state.active_sheet = excel_file.sheet_names[0]
             
-            st.session_state.uploaded_df = df
+            # Backward compatibility: point to active sheet
+            st.session_state.uploaded_df = st.session_state.sheets[st.session_state.active_sheet]
+            st.session_state.executor = st.session_state.executors[st.session_state.active_sheet]
             st.session_state.file_name = uploaded_file.name
-            st.session_state.executor = Executor(df)
-            st.success(f"Loaded {uploaded_file.name}: {len(df)} rows, {len(df.columns)} columns")
+            
+            # Success message
+            total_sheets = len(st.session_state.sheet_names)
+            if total_sheets > 1:
+                st.success(f"Loaded {uploaded_file.name}: {total_sheets} sheets")
+            else:
+                df = st.session_state.sheets[st.session_state.active_sheet]
+                st.success(f"Loaded {uploaded_file.name}: {len(df)} rows, {len(df.columns)} columns")
             st.rerun()
             
         except Exception as e:
@@ -480,10 +535,40 @@ else:
     # Show current file
     df = st.session_state.executor.get_dataframe()
     
+    # Sheet selector (if multiple sheets)
+    if len(st.session_state.sheet_names) > 1:
+        st.markdown("---")
+        col1, col2 = st.columns([1, 3])
+        
+        with col1:
+            st.markdown("**Active Sheet:**")
+        
+        with col2:
+            selected_sheet = st.selectbox(
+                "Choose sheet to edit",
+                st.session_state.sheet_names,
+                index=st.session_state.sheet_names.index(st.session_state.active_sheet),
+                key="sheet_selector",
+                label_visibility="collapsed"
+            )
+            
+            # Handle sheet change
+            if selected_sheet != st.session_state.active_sheet:
+                st.session_state.active_sheet = selected_sheet
+                st.session_state.uploaded_df = st.session_state.sheets[selected_sheet]
+                st.session_state.executor = st.session_state.executors[selected_sheet]
+                st.rerun()
+    
+    st.markdown("---")
+    
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.markdown(f"### Current Data: {st.session_state.file_name}")
+        # Show active sheet name if multiple sheets
+        if len(st.session_state.sheet_names) > 1:
+            st.markdown(f"### {st.session_state.active_sheet}")
+        else:
+            st.markdown(f"### Current Data: {st.session_state.file_name}")
     
     with col2:
         st.markdown(f"**Shape:** {df.shape[0]} rows × {df.shape[1]} columns")
@@ -506,6 +591,11 @@ else:
         # User edited the data manually
         st.session_state.executor.df = edited_df.copy()
         st.session_state.executor.df_history.append(edited_df.copy())
+        
+        # Sync to sheets dict
+        st.session_state.sheets[st.session_state.active_sheet] = edited_df.copy()
+        st.session_state.uploaded_df = edited_df.copy()
+        
         st.success("Manual edits saved! Use Undo button to revert if needed.")
         st.rerun()
     
@@ -598,8 +688,8 @@ else:
     
     if user_input:
         # Check API key
-        if not groq_api_key or st.session_state.llm_helper is None:
-            st.error("Please enter your Groq API key in the sidebar")
+        if not api_key or 'llm_helper' not in st.session_state or st.session_state.llm_helper is None:
+            st.error(f"Please enter your {provider} API key in the sidebar")
         else:
             # Add user message
             timestamp = datetime.now().strftime("%H:%M:%S")
@@ -715,23 +805,40 @@ else:
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        # CSV download
-        csv = df.to_csv(index=False).encode('utf-8')
+        # CSV download (active sheet only)
+        active_df = st.session_state.executors[st.session_state.active_sheet].get_dataframe()
+        csv = active_df.to_csv(index=False).encode('utf-8')
+        
+        if len(st.session_state.sheet_names) > 1:
+            download_label = f"Download {st.session_state.active_sheet} as CSV"
+            file_name = f"{st.session_state.active_sheet}.csv"
+        else:
+            download_label = "Download as CSV"
+            file_name = f"modified_{st.session_state.file_name.replace('.xlsx', '').replace('.xls', '')}.csv"
+        
         st.download_button(
-            label="Download as CSV",
+            label=download_label,
             data=csv,
-            file_name=f"modified_{st.session_state.file_name.replace('.xlsx', '').replace('.xls', '')}.csv",
+            file_name=file_name,
             mime="text/csv"
         )
     
     with col2:
-        # Excel download
+        # Excel download (all sheets)
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Sheet1')
+            for sheet_name in st.session_state.sheet_names:
+                # Get latest DataFrame from executor
+                sheet_df = st.session_state.executors[sheet_name].get_dataframe()
+                sheet_df.to_excel(writer, index=False, sheet_name=sheet_name)
+        
+        if len(st.session_state.sheet_names) > 1:
+            download_label = f"Download All {len(st.session_state.sheet_names)} Sheets as XLSX"
+        else:
+            download_label = "Download as XLSX"
         
         st.download_button(
-            label="Download as XLSX",
+            label=download_label,
             data=buffer.getvalue(),
             file_name=f"modified_{st.session_state.file_name.replace('.csv', '')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -741,6 +848,11 @@ else:
         # Undo button
         if st.button("Undo Last Change"):
             if st.session_state.executor.undo():
+                # Sync undone state back to sheets dict
+                undone_df = st.session_state.executor.get_dataframe()
+                st.session_state.sheets[st.session_state.active_sheet] = undone_df.copy()
+                st.session_state.uploaded_df = undone_df.copy()
+                
                 st.success("Undone")
                 st.rerun()
             else:

@@ -9,27 +9,43 @@ import requests
 from typing import Dict, List, Optional, Any
 
 class LLMHelper:
-    """Interface to Groq API for command generation"""
+    """Interface to LLM API providers (Groq or OpenAI)"""
     
-    def __init__(self, api_key: str, model: str = "openai/gpt-oss-20b"):
+    def __init__(self, api_key: str, provider: str = "groq", model: str = None):
         """
         Initialize LLM helper
         
         Args:
-            api_key: Groq API key
-            model: Model name (default: openai/gpt-oss-20b)
+            api_key: API key (Groq or OpenAI)
+            provider: "groq" or "openai"
+            model: Model name (auto-selected if None)
         """
         self.api_key = api_key
+        self.provider = provider
+        
+        # Auto-select model based on provider
+        if model is None:
+            model = "openai/gpt-oss-20b" if provider == "groq" else "gpt-4o-mini"
+        
         self.model = model
         
-        try:
-            from groq import Groq
-            self.groq_client = Groq(api_key=api_key)
-        except ImportError:
-            raise ImportError("Groq SDK not installed. Run: pip install groq")
+        if provider == "groq":
+            try:
+                from groq import Groq
+                self.client = Groq(api_key=api_key)
+            except ImportError:
+                raise ImportError("Groq SDK not installed. Run: pip install groq")
+        elif provider == "openai":
+            try:
+                from openai import OpenAI
+                self.client = OpenAI(api_key=api_key)
+            except ImportError:
+                raise ImportError("OpenAI SDK not installed. Run: pip install openai")
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
     
-    def _call_groq(self, prompt: str, system: str = "") -> str:
-        """Make API call to Groq"""
+    def _call_api(self, prompt: str, system: str = "") -> str:
+        """Make API call to configured provider (Groq or OpenAI)"""
         try:
             # Ensure strings are properly encoded (remove problematic characters)
             prompt = prompt.encode('ascii', 'ignore').decode('ascii')
@@ -40,7 +56,7 @@ class LLMHelper:
                 messages.append({"role": "system", "content": system})
             messages.append({"role": "user", "content": prompt})
             
-            response = self.groq_client.chat.completions.create(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=0.1,  # Low temperature for deterministic commands
@@ -50,7 +66,7 @@ class LLMHelper:
             return response.choices[0].message.content.strip()
             
         except Exception as e:
-            return json.dumps({"error": f"Groq API Error: {str(e)}"})
+            return json.dumps({"error": f"API Error: {str(e)}"})
     
     def generate_command(self, user_request: str, df_context: dict, conversation_history: list = None) -> dict:
         """
@@ -113,6 +129,7 @@ Supported COMMAND actions:
 - fill_na: {"column": str, "value": any}
 - trim_whitespace: {"column": str or null}  # null = all columns
 - change_case: {"column": str, "case_type": "upper"/"lower"/"title"}
+- assign_sequence: {"column": str, "sequence_type": "number"/"uppercase"/"lowercase", "start": int}  # start only for numbers
 
 **Date/Time Operations:**
 - reformat_date: {"column": str, "old_format": str, "new_format": str}
@@ -219,7 +236,7 @@ USER REQUEST:
 Generate the JSON command or insight response:
 """
         
-        response = self._call_groq(prompt, system)
+        response = self._call_api(prompt, system)
         
         # Parse JSON response
         try:
@@ -313,4 +330,4 @@ QUESTION: {question}
 Answer concisely:
 """
         
-        return self._call_groq(prompt, system)
+        return self._call_api(prompt, system)

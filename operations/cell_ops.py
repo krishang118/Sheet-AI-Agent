@@ -165,3 +165,59 @@ def change_case(df: pd.DataFrame, column: str, case_type: str) -> pd.DataFrame:
     elif case_type == "title":
         df[column] = df[column].astype(str).str.title()
     return df
+
+
+def assign_sequence(df: pd.DataFrame, column: str, sequence_type: str, start: int = 1) -> pd.DataFrame:
+    """
+    Assign sequential values to a column
+    
+    Args:
+        df: DataFrame
+        column: Column name
+        sequence_type: Type of sequence - "number", "uppercase", "lowercase"
+        start: Starting value for number sequences (default: 1)
+    
+    Returns:
+        Modified DataFrame
+    
+    Examples:
+        - sequence_type="number", start=1 → 1, 2, 3, 4, ...
+        - sequence_type="uppercase" → A, B, C, D, ..., Z, AA, AB, ...
+        - sequence_type="lowercase" → a, b, c, d, ..., z, aa, ab, ...
+    """
+    if column not in df.columns:
+        raise ValueError(f"Column '{column}' not found")
+    
+    if sequence_type not in ["number", "uppercase", "lowercase"]:
+        raise ValueError(f"Invalid sequence_type: {sequence_type}. Must be 'number', 'uppercase', or 'lowercase'")
+    
+    df = df.copy()
+    num_rows = len(df)
+    
+    if sequence_type == "number":
+        # Generate numeric sequence
+        df[column] = range(start, start + num_rows)
+    
+    elif sequence_type == "uppercase":
+        # Generate uppercase letter sequence (A, B, C, ..., Z, AA, AB, ...)
+        def num_to_uppercase(n):
+            result = ""
+            while n >= 0:
+                result = chr(65 + (n % 26)) + result
+                n = n // 26 - 1
+            return result
+        
+        df[column] = [num_to_uppercase(i) for i in range(num_rows)]
+    
+    elif sequence_type == "lowercase":
+        # Generate lowercase letter sequence (a, b, c, ..., z, aa, ab, ...)
+        def num_to_lowercase(n):
+            result = ""
+            while n >= 0:
+                result = chr(97 + (n % 26)) + result
+                n = n // 26 - 1
+            return result
+        
+        df[column] = [num_to_lowercase(i) for i in range(num_rows)]
+    
+    return df

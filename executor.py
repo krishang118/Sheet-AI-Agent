@@ -72,7 +72,7 @@ class Executor:
                 self.df = self._execute_column_op(action, parameters)
                 
             elif action in ["replace_text", "replace_conditional", "set_column_value", 
-                           "fill_na", "trim_whitespace", "change_case"]:
+                           "fill_na", "trim_whitespace", "change_case", "assign_sequence"]:
                 self.df = self._execute_cell_op(action, parameters)
                 
             elif action in ["reformat_date", "extract_date_part", "convert_to_datetime", "calculate_duration"]:
@@ -178,6 +178,8 @@ class Executor:
             return cell_ops.trim_whitespace(self.df, **params)
         elif action == "change_case":
             return cell_ops.change_case(self.df, **params)
+        elif action == "assign_sequence":
+            return cell_ops.assign_sequence(self.df, **params)
         else:
             raise ExecutionError(f"Unknown cell operation: {action}")
     
