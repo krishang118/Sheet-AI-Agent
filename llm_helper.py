@@ -32,15 +32,25 @@ class LLMHelper:
         if provider == "groq":
             try:
                 from groq import Groq
-                self.client = Groq(api_key=api_key)
-            except ImportError:
-                raise ImportError("Groq SDK not installed. Run: pip install groq")
+                import httpx
+                # Use custom httpx client to fix SSL issues on Windows
+                http_client = httpx.Client(verify=False)
+                self.client = Groq(api_key=api_key, http_client=http_client)
+            except ImportError as e:
+                if "groq" in str(e):
+                    raise ImportError("Groq SDK not installed. Run: pip install groq")
+                raise ImportError("httpx not installed. Run: pip install httpx")
         elif provider == "openai":
             try:
                 from openai import OpenAI
-                self.client = OpenAI(api_key=api_key)
-            except ImportError:
-                raise ImportError("OpenAI SDK not installed. Run: pip install openai")
+                import httpx
+                # Use custom httpx client to fix SSL issues on Windows
+                http_client = httpx.Client(verify=False)
+                self.client = OpenAI(api_key=api_key, http_client=http_client)
+            except ImportError as e:
+                if "openai" in str(e):
+                    raise ImportError("OpenAI SDK not installed. Run: pip install openai")
+                raise ImportError("httpx not installed. Run: pip install httpx")
         else:
             raise ValueError(f"Unsupported provider: {provider}")
     

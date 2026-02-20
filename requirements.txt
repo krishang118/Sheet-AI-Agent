@@ -4,5 +4,6 @@ openpyxl
 xlrd
 groq
 openai
+httpx
 requests
 faster-whisper>=0.10.0
